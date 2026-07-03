@@ -1,0 +1,7 @@
+[submodule "ros2_ws/MPPI/src/nav2_pyif"]
+	path = ros2_ws/MPPI/src/nav2_pyif
+	url = https://github.com/DanelLepp/nav2_pyif
+[submodule "ros2_ws/CoHAN-Nav2"]
+	path = ros2_ws/CoHAN-Nav2
+	url = https://github.com/sphanit/CoHAN-Nav2
+	branch = aixhri_summer_school

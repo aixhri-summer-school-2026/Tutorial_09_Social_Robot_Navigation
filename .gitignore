@@ -1,0 +1,13 @@
+*__pycache__*
+*.pyc
+**/build/
+**/install/
+**/logs/
+**/log/
+.bash_history
+**/.vscode/
+**/.ros/
+**/.cache/
+**/.rviz2/
+**/.config/
+*.sudo_as_admin_successful

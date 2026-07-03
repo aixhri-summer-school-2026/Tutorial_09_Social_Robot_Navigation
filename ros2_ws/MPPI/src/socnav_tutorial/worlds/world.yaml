@@ -1,0 +1,26 @@
+image: world.pgm
+resolution: 0.050000
+origin: [-12.00000, -12.00000, 0.000000]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196
+
+## For the simulator
+speed: 2.0              # Keyboard linear speed (m/s)
+angular_speed: 1.5708   # Keyboard angular speed (rad/s), default pi/2
+
+entities:
+  - name: robot
+    start_x: -9.0
+    start_y: 9.0
+    start_theta: 0
+    radius: 0.2
+    color: [0, 100, 255, 255]
+    use_keyboard: true        # Only for the robot
+    use_differential: false   # Only for the robot
+    use_laser: true           # Only for the robot
+    laser_range: 10           # Only for the robot
+    laser_resolution: 1081    # Only for the robot
+    laser_angle: 6.2832       # Only for the robot
+  
+  # TODO: Part 0 -> Add more entities here, specifically human1 at 3, -1 and human2 at 0, 9.
