@@ -42,21 +42,26 @@ class SocialMPPINode(object):
         self.Q = np.array([10.0, 10.0, 2.0])    # Tracking weight for [x, y, theta]
         
         ## TODO: Part 1 -> Define a penalty for entering costmap  
-        self.w_costmap = 1.0                    # Costmap penalty weight 
+        ## Define costmap penalty weight  
+        self.w_costmap = 1.0                   
+       
+        
+        ################### Part 2 ######################        
+        ## TODO: Part 2-> Define tracked agents and their predictions
+        ## Define tracked agents and their predictions 
+        self.tracked_agents = None
+        self.agent_predictions = None
         
         ## TODO: Part 2 -> Define a penalty for going very close to humans or violating the proxemics
-        self.w_human_proxem = 50.0              # Cost penalty for voilating human proxemics 
+        ## Define human proxemics penalty weight 
+        self.w_human_proxem = 50.0              
 
-        
-        # Base nominal control sequence cache [N, 2]
-        self.U_nominal = np.zeros((self.N, 2))
 
-        ## TODO: Part 2 -> Human Predictions: Define prediction size (number of predictions), prediction horizon (time in sec), 
-        # proxemics distance for human (in metres), and radius of circumcircle for human (in metres)
-        self.prediction_size = 20      # Number of prediction steps
-        self.prediction_horizon = 5.0  # Horizon of contant velocity prediction
-        self.proxemic_dist = 0.6       # Human Proxemics Distance
-        self.human_radius = 0.3        # Radius of the human (radius of circumcircle)
+        ## TODO: Part 2 -> Initialize human safety parameters
+        ## 3. Define proxemics distance for human (in metres), 
+        ## 4. Define radius of circumcircle for human (in metres)
+        self.proxemic_dist = 0.6       
+        self.human_radius = 0.3
 
         ## Visualization Initialization
         self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -175,44 +180,22 @@ class SocialMPPINode(object):
         gx = (x - origin_x) / resolution
         gy = (y - origin_y) / resolution
         return gx, gy
-
-    ## TODO: Part 1 -> Compute a vectorized cost for entering costmap for the 'K' predictions at a time step 't' 
-    def get_interpolated_costmap_value(self, x, y):
+    
+    def get_out_of_bounds_mask(self, x0, y0, x1, y1):
         """
-        Vectorized bilinear interpolation for costmap lookup.
-        Accepts both scalar coordinates and NumPy arrays of shape (K,).
+        Helper function to check if the grid coordinates are out of bounds
         """
-        # Ensure inputs are numpy arrays for batch processing
-        x = np.atleast_1d(x)
-        y = np.atleast_1d(y)
-
-        # Transform entire arrays from world coordinates to grid index floats
-        gx, gy = self.world_to_grid(x, y)
-
-        # Compute bounding cell coordinates across the entire batch
-        x0 = np.floor(gx).astype(np.int32)
-        x1 = x0 + 1
-        y0 = np.floor(gy).astype(np.int32)
-        y1 = y0 + 1
-
-        # Vectorized Boundary Check
-        # Create a boolean mask of any points that fall outside the costmap boundaries
-        width = self.costmap.info.width
-        height = self.costmap.info.height
-
-        out_of_bounds = (x0 < 0) | (y0 < 0) | (x1 >= width) | (y1 >= height)
-
-        # Clip coordinates safely to legal grid ranges so flat-indexing doesn't throw errors
-        x0_clipped = np.clip(x0, 0, width - 1)
-        x1_clipped = np.clip(x1, 0, width - 1)
-        y0_clipped = np.clip(y0, 0, height - 1)
-        y1_clipped = np.clip(y1, 0, height - 1)
-
-        # Calculate fractional interpolation weights across the batch
-        sx = gx - x0
-        sy = gy - y0
-
-        # Extract neighbor cell costs using vectorized 1D array indexing
+        out_of_bounds = (x0 < 0) | (x1 >= self.cost_map_width) | (y0 < 0) | (y1 >= self.cost_map_height)
+        return out_of_bounds
+    
+    def get_cell_cost(self, x, y):
+        """
+        Helper function to get the cost of a cell in the costmap
+        """
+        # Convert to integer indices for flat indexing
+        x0 = np.clip(x, 0, self.cost_map_width - 1)
+        y0 = np.clip(y, 0, self.cost_map_height - 1)
+        
         cost_data = np.asarray(self.costmap.data)
 
         c00 = cost_data[y0_clipped * width + x0_clipped].astype(np.uint8)
@@ -285,8 +268,12 @@ class SocialMPPINode(object):
             # Fast vectorized orientation wrap-around tracking
             err[:, 2] = np.arctan2(np.sin(err[:, 2]), np.cos(err[:, 2]))
             
-            ## TODO: Part 1
-            # Get the interpolated costmap value (needs iterpolation to deal with discretization)
+            ################### Part 1 ######################
+            ## TODO: Part 1: Get the interpolated costmap value (needs iterpolation to deal with discretization)
+            ## 1. Complete the get_interpolated_costmap_value function
+            ## 2. Get the cost associated with the robot entering the costmap
+            ## 3. Store the costmap penalty in a variable called "costmap_penalty"
+            
             costmap_penalties = self.get_interpolated_costmap_value(states[:, 0], states[:, 1])
 
             ## TODO: Part 2
@@ -299,11 +286,9 @@ class SocialMPPINode(object):
 
             # Define the combined cost
             costs += (
-                np.sum(err * err * self.Q, axis=1)          ## Quadratic tracking cost
-                ## TODO: Part 1
-                + (self.w_costmap * costmap_penalties)      ## costmap cost
-                ## TODO: Part 2
-                + (self.w_human_proxem * social_penalties)  ## social cost
+                np.sum(err * err * self.Q, axis=1)           ## Quadratic tracking cost
+                + (self.w_costmap * costmap_penalties)       ## Costmap penalty for entering costmap (weight * penalty)                        
+                + (self.w_human_proxem * social_penalties)   ## Social penalty for human proxemics violations (weight * penalty)                          
             )
 
         # Softmax weighting of trajectories based on performance score
@@ -378,48 +363,186 @@ class SocialMPPINode(object):
         self.cmd_vel.twist.angular.z = w_cmd
         return self.cmd_vel
 
-    def get_global_references(self, current_pose):
+    ################### Part 1 ######################        
+    def get_interpolated_costmap_value(self, x, y):
         """
-        Get the point references from the global path from the current position
+        Vectorized bilinear interpolation for costmap lookup.
+        Accepts both scalar coordinates and NumPy arrays of shape (K,).
         """
+        ## TODO: Part 1 -> Compute a vectorized cost for entering costmap for the 'K' predictions at a time step 't'
+        ## 1. Convert x and y to NumPy arrays for vectorized processing.
+        ## 2. Transform world coordinates into costmap grid coordinates. Use the world_to_grid helper function.
+        ## 3. Compute the surrounding grid cell indices. Make sure they are integer values.
+        ## 4. Check for out-of-bounds points and create a mask using the "get_out_of_bounds_mask" helper function. Store it in "out_of_bounds". 
+        ## 5. Calculate fractional interpolation weights across the batch.
+        ## 6. Read the four neighboring cost values using the grid cells above and bilinearly interpolate them. Use the helper funtion "get_cell_cost".
+        ## 7. Store the interpolated cost values in a variable called "costs".
+        ## 7. Apply the out-of-bounds mask to "costs" to set any out-of-bounds point's cost to a high penalty value (e.g., 255).
+        ## 8. Return a scalar for a single point or an array for batched coordinates of shape (K,).
+
+         # Ensure inputs are numpy arrays for batch processing
+        x = np.atleast_1d(x)
+        y = np.atleast_1d(y)
+
+        # Transform entire arrays from world coordinates to grid index floats
+        gx, gy = self.world_to_grid(x, y)
+
+        # Compute bounding cell coordinates across the entire batch
+        x0 = np.floor(gx).astype(np.int32)
+        x1 = x0 + 1
+        y0 = np.floor(gy).astype(np.int32)
+        y1 = y0 + 1
+
+        # Vectorized Boundary Check
+        # Create a boolean mask of any points that fall outside the costmap boundaries
+        out_of_bounds = self.get_out_of_bounds_mask(x0, y0, x1, y1)
+     
+
+        # Calculate fractional interpolation weights across the batch
+        sx = gx - x0
+        sy = gy - y0
+
+        # Extract neighbor cell costs using vectorized 1D array indexing
+        cost_data = np.asarray(self.costmap.data)
+
+
+        width = self.costmap.info.width
+        height = self.costmap.info.height
         
-        # Get point-to-point dists for each point along path
-        xy_plan = np.array([[p.pose.position.x, p.pose.position.y] for p in self.global_plan.poses])
-        dists = np.linalg.norm(np.diff(xy_plan, axis=0), axis=1)
-        cum_dists = np.insert(np.cumsum(dists), 0, 0.0)
+        # Clip indices to prevent out-of-bounds access
+        x0_clipped = np.clip(x0, 0, width - 1)
+        x1_clipped = np.clip(x1, 0, width - 1)
+        y0_clipped = np.clip(y0, 0, height - 1)
+        y1_clipped = np.clip(y1, 0, height - 1)
 
-        # Get point-to-point yaws along the entire global plan
-        plan_yaws = np.arctan2(np.diff(xy_plan[:, 1]), np.diff(xy_plan[:, 0]))
-        plan_yaws = np.append(plan_yaws, plan_yaws[-1])
 
-        # Get the closest point index and the start dist for the current pose
-        curr_xy = np.array([current_pose.position.x, current_pose.position.y])
-        closest_idx = np.argmin(np.linalg.norm(xy_plan - curr_xy, axis=1))
-        start_dist = cum_dists[closest_idx]
+        c00 = cost_data[y0_clipped * width + x0_clipped].astype(np.uint8)
+        c10 = cost_data[y0_clipped * width + x1_clipped].astype(np.uint8)
+        c01 = cost_data[y1_clipped * width + x0_clipped].astype(np.uint8)
+        c11 = cost_data[y1_clipped * width + x1_clipped].astype(np.uint8)
 
-        ## Get the N distances --> to get the references for tracking
-        target_distances = start_dist + (np.arange(self.N + 1) * self.ds)
-        indices = np.clip(np.searchsorted(cum_dists, target_distances), 0, len(xy_plan) - 1)
-        g_refs = []
+        # Perform batch bilinear interpolation math
+        c0 = c00 * (1.0 - sx) + c10 * sx
+        c1 = c01 * (1.0 - sx) + c11 * sx
+        costs = c0 * (1.0 - sy) + c1 * sy
 
-        for idx in indices:
-            target_x = xy_plan[idx][0]
-            target_y = xy_plan[idx][1]
-            yaw = plan_yaws[idx]
+        # Apply lethal cost override to any out-of-bounds samples
+        costs[out_of_bounds] = 255.0
 
-            g_refs.append([target_x, target_y, yaw])
-
-        return np.array(g_refs[1:])
-
-    def get_yaw_from_pose(self, pose):
+        # If inputs were scalars, return a clean float; otherwise, return the array
+        return costs if len(costs) > 1 else float(costs[0])
+    
+    ################### Part 2 ######################         
+    def setTrackedAgents(self, tracked_agents):
         """
-        Helper function to get the yaw from Pose message
+        Get the data from the tracked_agents topic and store it in a class variable
         """
-        qx, qy, qz, qw = (
-            pose.orientation.x,
-            pose.orientation.y,
-            pose.orientation.z,
-            pose.orientation.w,
+        ## TODO: Part 2 -> Complete Tracked Agents callback
+        ## 1. Store the incoming tracked_agents message in a class variable.
+        ## 2. Make sure the message contains valid agent data before continuing.
+        ## 3. Trigger the human prediction step so future positions are available.
+                        
+        try:
+            self.tracked_agents = tracked_agents
+            try:
+                self.predict_agent_paths()
+            except Exception as e:
+                print(f"Warning: predict_agent_paths failed: {e}", flush=True)
+        except Exception as e:
+            print(f"Error storing tracked_agents: {e}", flush=True)
+            self.tracked_agents = None          
+    
+    ################### Part 2 ######################                 
+    def predict_agent_paths(self):
+        """
+        Class function to predict the motion of the tracked humans using a constant velocity model
+        """
+        ## TODO: Part 2 -> Complete constant velocity prediction for humans
+        ## 1. Check whether tracked_agents exists and contains agent data.
+        ## 2. Initialize an empty prediction structure for the rollout horizon steps (size = self.N).
+        ## 3. Loop over each tracked agent (e.g, like 'agent in self.tracked_agents.agents') and skip stationary ones as they are not needed.
+        ## 4. Use the current position and velocity to predict future positions over time.
+        ## 5. Store the predicted positions for each future time step.
+        
+        if self.tracked_agents is None or not hasattr(self.tracked_agents, "agents"):
+            self.agent_predictions = None
+            return
+
+        # Initialize structured list of coordinates tracking length of horizon steps N
+        self.agent_predictions = [[] for _ in range(self.N)]
+
+        for agent in self.tracked_agents.agents:
+            # Skip stationary agents
+            if (
+                abs(agent.velocity.linear.x) < 0.01
+                and abs(agent.velocity.linear.y) < 0.01
+            ):
+                continue
+
+            init_x = agent.pose.position.x
+            init_y = agent.pose.position.y
+            vel_x = agent.velocity.linear.x
+            vel_y = agent.velocity.linear.y
+
+            # Linear extrapolation matching our rollouts time increments
+            for step in range(self.N):
+                future_time = step * self.dt
+                pred_x = init_x + vel_x * future_time
+                pred_y = init_y + vel_y * future_time
+                self.agent_predictions[step].append([pred_x, pred_y])
+                
+    ################### Part 2 ######################                     
+    def compute_human_avoidance_cost(self, state_x, state_y, agent_predictions):
+        """
+        Vectorized cost computation for human avoidance
+        """
+        ## TODO: Part 2 -> Compute a vectorized human avoidance cost for the 'K' predictions at a time step 't'
+        ## 1. Check whether there are any predicted agent positions to evaluate.
+        ## 2. Convert agent predictions at current timeline step to array [Num_Agents, 2]. Get the x and y positions of all agents at this time step (shape = (1, Num_Agents)).
+        ## 3. Get the robot's current rollout state positions (state_x, state_y) and reshape them for broadcasting (shape = (K, 1)). 
+        #  4. Note: Shape requirements: [K, 1] and [1, Num_Agents] for broadcasting matrix calculation.
+        ## 5. Compute the pairwise distance from each rollout state to each predicted human position. Resulting shape: (K, Num_Agents)
+        ## 6. Get the effective distance by subtracting the human radius and robot radius from the pairwise distances.
+        ## 7. Apply collision, proxemics, and safe-distance cost logic.
+        ##      for collision: if effective distance < 0, assign a high penalty
+        ##      for proxemics: if effective distance < proxemics distance, assign a penalty that increases as the distance decreases with high weight
+        ##      for safe-distance: if effective distance < safe distance, assign a penalty that increases as the distance decreases with low weight
+        ## 8. Sum the penalties across agents to produce one cost per rollout state.
+        ## 9. Return the computed cost array of shape (K,).
+        
+         # If no agents are predicted or tracked, exit with zero cost instantly
+        if agent_predictions is None or len(agent_predictions) == 0:
+            return np.zeros_like(state_x)
+
+        # Convert agent predictions at current timeline step to array [Num_Agents, 2]
+        # Coordinates shape requirements: [K, 1] and [1, Num_Agents] for broadcasting matrix calculation
+        agents_arr = np.array(agent_predictions)  # Assumed tracking active x,y frames
+        hx = agents_arr[:, 0][np.newaxis, :]  # Shape: (1, Num_Agents)
+        hy = agents_arr[:, 1][np.newaxis, :]  # Shape: (1, Num_Agents)
+
+        sx = state_x[:, np.newaxis]  # Shape: (K, 1)
+        sy = state_y[:, np.newaxis]  # Shape: (K, 1)
+
+        # Broadmatrix Distance computation between all K samples and all tracked agents
+        # Resulting shape: (K, Num_Agents)
+        dist = np.sqrt((sx - hx) ** 2 + (sy - hy) ** 2) + 1e-6
+        radius_sum = self.robot_radius + self.human_radius
+        eff_dist = dist - radius_sum
+
+        # Vectorized Condition Evaluation Masks
+        cond_collision = eff_dist < 0
+        cond_proxemic = (eff_dist >= 0) & (eff_dist < self.proxemic_dist)
+        cond_safe = eff_dist >= self.proxemic_dist
+
+        # Apply piece-wise functional equivalents matching your exact scaling mathematical intents
+        choice_collision = 100.0 * np.abs((1./eff_dist) + self.proxemic_dist)
+        choice_proxemic = 10.0 * np.abs(1./eff_dist)
+        choice_safe = 1. / (eff_dist* 10.0)
+
+        # Select matching equations per cell element
+        pair_costs = np.select(
+            [cond_collision, cond_proxemic, cond_safe],
+            [choice_collision, choice_proxemic, choice_safe],
         )
         return math.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
 

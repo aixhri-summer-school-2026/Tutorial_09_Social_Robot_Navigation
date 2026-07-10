@@ -178,16 +178,16 @@ def generate_launch_description():
             on_exit=EmitEvent(event=Shutdown(reason='Simulator with GUI exited'))))
     
     ## Uncomment the following lines to enable teleop node for human    
-    # teleop_node = Node(
-    #     package='teleop_twist_keyboard',
-    #     executable='teleop_twist_keyboard',
-    #     name='teleop_twist_keyboard',
-    #     output='screen',
-    #     prefix='xterm -e',
-    #     remappings=[
-    #         ('/cmd_vel', '/human2/cmd_vel')
-    #     ]
-    # )
+    teleop_node = Node(
+        package='teleop_twist_keyboard',
+        executable='teleop_twist_keyboard',
+        name='teleop_twist_keyboard',
+        output='screen',
+        prefix='xterm -e',
+        remappings=[
+            ('/cmd_vel', '/human2/cmd_vel')
+        ]
+    )
 
     # Create the launch description and populate
     ld = LaunchDescription()
@@ -212,7 +212,7 @@ def generate_launch_description():
     ld.add_action(socnav_sim_node_gui)
     ld.add_action(rviz_launch)
     ld.add_action(bringup_launch)
-    # ld.add_action(teleop_node)  # Uncomment this line to enable teleop node for human
+    ld.add_action(teleop_node)  # Uncomment this line to enable teleop node for human
 
     # Add exit event handlers
     ld.add_action(exit_event_handler_sim)

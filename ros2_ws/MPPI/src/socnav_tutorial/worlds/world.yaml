@@ -30,16 +30,10 @@ entities:
     start_theta: 0
     radius: 0.2
     color: [255, 0, 0, 255]
-    use_keyboard: false
-    use_differential: false
-    use_laser: false
-
   - name: human2
     start_x: 0.0
     start_y: 9.0
-    start_theta: 0
+    start_theta: 3.14159
     radius: 0.2
     color: [0, 255, 0, 255]
-    use_keyboard: false
-    use_differential: false
-    use_laser: false
+

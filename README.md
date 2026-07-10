@@ -16,13 +16,12 @@ cd Tutorial_09_Social_Robot_Navigation
 git submodule update --init --recursive
 ```
 
-## Build and Run the docker containers
+## Pull and Run the docker containers
 
-Building the image locally
+Pull the docker
 
 ```
-cd Tutorial_09_Social_Robot_Navigation/docker
-./build-docker.sh
+./pull_docker.sh
 ```
 
 Run the docker in a shell
