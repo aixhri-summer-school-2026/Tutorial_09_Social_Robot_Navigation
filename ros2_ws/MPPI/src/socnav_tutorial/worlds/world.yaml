@@ -24,3 +24,22 @@ entities:
     laser_angle: 6.2832       # Only for the robot
   
   # TODO: Part 0 -> Add more entities here, specifically human1 at 3, -1 and human2 at 0, 9.
+  - name: human1
+    start_x: 3.0
+    start_y: -1.0
+    start_theta: 0
+    radius: 0.2
+    color: [255, 0, 0, 255]
+    use_keyboard: false
+    use_differential: false
+    use_laser: false
+
+  - name: human2
+    start_x: 0.0
+    start_y: 9.0
+    start_theta: 0
+    radius: 0.2
+    color: [0, 255, 0, 255]
+    use_keyboard: false
+    use_differential: false
+    use_laser: false
