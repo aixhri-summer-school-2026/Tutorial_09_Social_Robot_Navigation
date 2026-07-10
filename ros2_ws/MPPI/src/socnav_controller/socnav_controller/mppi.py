@@ -48,7 +48,9 @@ class SocialMPPINode(object):
 
         ################### Part 1 ######################        
         ## TODO: Part 1 -> Define a penalty for entering costmap  
-        ## Define costmap penalty weight         
+        ## Define costmap penalty weight  
+        self.w_costmap = 1.0                    # Costmap penalty weight 
+       
         
         ################### Part 2 ######################        
         ## TODO: Part 2-> Define tracked agents and their predictions
@@ -209,6 +211,8 @@ class SocialMPPINode(object):
             ## 1. Complete the get_interpolated_costmap_value function
             ## 2. Get the cost associated with the robot entering the costmap
             ## 3. Store the costmap penalty in a variable called "costmap_penalty"
+            costmap_penalties = self.get_interpolated_costmap_value(states[:, 0], states[:, 1])
+
 
             ################### Part 2 ######################
             ## TODO: Part 2: Extract where all agents are predicted to be at exactly this future time-step k
@@ -225,7 +229,8 @@ class SocialMPPINode(object):
             # Define the combined cost
             costs += (
                 np.sum(err * err * self.Q, axis=1)          ## Quadratic tracking cost
-                ## TODO: Part 1                             ## Costmap penalty for entering costmap (weight * penalty)
+                + self.w_costmap * costmap_penalties
+                                                            ## Costmap penalty for entering costmap (weight * penalty)
                 ## TODO: Part 2                             ## Social penalty for human proxemics violations (weight * penalty)
             )
 
@@ -318,7 +323,54 @@ class SocialMPPINode(object):
         ## 7. Apply the out-of-bounds mask to "costs" to set any out-of-bounds point's cost to a high penalty value (e.g., 255).
         ## 8. Return a scalar for a single point or an array for batched coordinates of shape (K,).
 
-        pass
+         # Ensure inputs are numpy arrays for batch processing
+        x = np.atleast_1d(x)
+        y = np.atleast_1d(y)
+
+        # Transform entire arrays from world coordinates to grid index floats
+        gx, gy = self.world_to_grid(x, y)
+
+        # Compute bounding cell coordinates across the entire batch
+        x0 = np.floor(gx).astype(np.int32)
+        x1 = x0 + 1
+        y0 = np.floor(gy).astype(np.int32)
+        y1 = y0 + 1
+
+        # Vectorized Boundary Check
+        # Create a boolean mask of any points that fall outside the costmap boundaries
+        width = self.costmap.info.width
+        height = self.costmap.info.height
+
+        out_of_bounds = (x0 < 0) | (y0 < 0) | (x1 >= width) | (y1 >= height)
+
+        # Clip coordinates safely to legal grid ranges so flat-indexing doesn't throw errors
+        x0_clipped = np.clip(x0, 0, width - 1)
+        x1_clipped = np.clip(x1, 0, width - 1)
+        y0_clipped = np.clip(y0, 0, height - 1)
+        y1_clipped = np.clip(y1, 0, height - 1)
+
+        # Calculate fractional interpolation weights across the batch
+        sx = gx - x0
+        sy = gy - y0
+
+        # Extract neighbor cell costs using vectorized 1D array indexing
+        cost_data = np.asarray(self.costmap.data)
+
+        c00 = cost_data[y0_clipped * width + x0_clipped].astype(np.uint8)
+        c10 = cost_data[y0_clipped * width + x1_clipped].astype(np.uint8)
+        c01 = cost_data[y1_clipped * width + x0_clipped].astype(np.uint8)
+        c11 = cost_data[y1_clipped * width + x1_clipped].astype(np.uint8)
+
+        # Perform batch bilinear interpolation math
+        c0 = c00 * (1.0 - sx) + c10 * sx
+        c1 = c01 * (1.0 - sx) + c11 * sx
+        c = c0 * (1.0 - sy) + c1 * sy
+
+        # Apply lethal cost override to any out-of-bounds samples
+        c[out_of_bounds] = 255.0
+
+        # If inputs were scalars, return a clean float; otherwise, return the array
+        return c if len(c) > 1 else float(c[0])
     
     ################### Part 2 ######################         
     def setTrackedAgents(self, tracked_agents):

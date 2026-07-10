@@ -130,8 +130,8 @@ fi
 source /opt/ros/humble/setup.bash
 source /home/nav2-socnav/socnav_sim/install/setup.bash
 
-export ROS_DOMAIN_ID=0
-export ROS_LOCALHOST_ONLY=0
+export ROS_DOMAIN_ID=34
+export ROS_LOCALHOST_ONLY=1
 export TURTLEBOT3_MODEL=waffle  # Iron and older only with Gazebo Classic
 export GAZEBO_MODEL_PATH=$GAZEBO_MODEL_PATH:/opt/ros/humble/share/turtlebot3_gazebo/models # Iron and older only with Gazebo Classic
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
