@@ -55,13 +55,19 @@ class SocialMPPINode(object):
         ################### Part 2 ######################        
         ## TODO: Part 2-> Define tracked agents and their predictions
         ## Define tracked agents and their predictions 
+        self.tracked_agents = None
+        self.agent_predictions = None
         
         ## TODO: Part 2 -> Define a penalty for going very close to humans or violating the proxemics
         ## Define human proxemics penalty weight 
-        
+        self.w_human_proxem = 50.0              # Cost penalty for voilating human proxemics 
+
+
         ## TODO: Part 2 -> Initialize human safety parameters
         ## 3. Define proxemics distance for human (in metres), 
         ## 4. Define radius of circumcircle for human (in metres)
+        self.proxemic_dist = 0.6       # Human Proxemics Distance
+        self.human_radius = 0.3        # Radius of the human (radius of circumcircle)
 
     def setPath(self, global_plan):
         """
@@ -219,19 +225,25 @@ class SocialMPPINode(object):
             ## 1. Complete the predict_agent_paths function
             ## 2. Get the predicted positions of all humans at this time-step k
             ## 2. Store the predicted positions in a variable called "step_agent_coords"
+            
+            step_agent_coords = (self.agent_predictions[k] if self.agent_predictions else None)
+
 
             ################### Part 2 ######################
             ## TODO: Part 2: Get the social penalty associated with the human proxemics violations
             ## 1. Complete the compute_human_avoidance_cost function
             ## 2. Get the social cost at this time-step k using "step_agent_coords"
             ## 3. Store the social cost in a variable called "social_penalty"
+            
+            social_penalties = self.compute_human_avoidance_cost(states[:, 0], states[:, 1], step_agent_coords)
+            
 
             # Define the combined cost
             costs += (
                 np.sum(err * err * self.Q, axis=1)          ## Quadratic tracking cost
                 + self.w_costmap * costmap_penalties
                                                             ## Costmap penalty for entering costmap (weight * penalty)
-                ## TODO: Part 2                             ## Social penalty for human proxemics violations (weight * penalty)
+                + (self.w_human_proxem * social_penalties)                             ## Social penalty for human proxemics violations (weight * penalty)
             )
 
         # Softmax weighting of trajectories based on performance score
@@ -382,7 +394,16 @@ class SocialMPPINode(object):
         ## 2. Make sure the message contains valid agent data before continuing.
         ## 3. Trigger the human prediction step so future positions are available.
         
-        pass          
+                
+        try:
+            self.tracked_agents = tracked_agents
+            try:
+                self.predict_agent_paths()
+            except Exception as e:
+                print(f"Warning: predict_agent_paths failed: {e}", flush=True)
+        except Exception as e:
+            print(f"Error storing tracked_agents: {e}", flush=True)
+            self.tracked_agents = None          
     
     ################### Part 2 ######################                 
     def predict_agent_paths(self):
@@ -396,7 +417,32 @@ class SocialMPPINode(object):
         ## 4. Use the current position and velocity to predict future positions over time.
         ## 5. Store the predicted positions for each future time step.
         
-        pass
+        if self.tracked_agents is None or not hasattr(self.tracked_agents, "agents"):
+            self.agent_predictions = None
+            return
+
+        # Initialize structured list of coordinates tracking length of horizon steps N
+        self.agent_predictions = [[] for _ in range(self.N)]
+
+        for agent in self.tracked_agents.agents:
+            # Skip stationary agents
+            if (
+                abs(agent.velocity.linear.x) < 0.01
+                and abs(agent.velocity.linear.y) < 0.01
+            ):
+                continue
+
+            init_x = agent.pose.position.x
+            init_y = agent.pose.position.y
+            vel_x = agent.velocity.linear.x
+            vel_y = agent.velocity.linear.y
+
+            # Linear extrapolation matching our rollouts time increments
+            for step in range(self.N):
+                future_time = step * self.dt
+                pred_x = init_x + vel_x * future_time
+                pred_y = init_y + vel_y * future_time
+                self.agent_predictions[step].append([pred_x, pred_y])
                 
     ################### Part 2 ######################                     
     def compute_human_avoidance_cost(self, state_x, state_y, agent_predictions):
@@ -417,7 +463,43 @@ class SocialMPPINode(object):
         ## 8. Sum the penalties across agents to produce one cost per rollout state.
         ## 9. Return the computed cost array of shape (K,).
         
-        pass
+         # If no agents are predicted or tracked, exit with zero cost instantly
+        if agent_predictions is None or len(agent_predictions) == 0:
+            return np.zeros_like(state_x)
+
+        # Convert agent predictions at current timeline step to array [Num_Agents, 2]
+        # Coordinates shape requirements: [K, 1] and [1, Num_Agents] for broadcasting matrix calculation
+        agents_arr = np.array(agent_predictions)  # Assumed tracking active x,y frames
+        hx = agents_arr[:, 0][np.newaxis, :]  # Shape: (1, Num_Agents)
+        hy = agents_arr[:, 1][np.newaxis, :]  # Shape: (1, Num_Agents)
+
+        sx = state_x[:, np.newaxis]  # Shape: (K, 1)
+        sy = state_y[:, np.newaxis]  # Shape: (K, 1)
+
+        # Broadmatrix Distance computation between all K samples and all tracked agents
+        # Resulting shape: (K, Num_Agents)
+        dist = np.sqrt((sx - hx) ** 2 + (sy - hy) ** 2) + 1e-6
+        radius_sum = self.robot_radius + self.human_radius
+        eff_dist = dist - radius_sum
+
+        # Vectorized Condition Evaluation Masks
+        cond_collision = eff_dist < 0
+        cond_proxemic = (eff_dist >= 0) & (eff_dist < self.proxemic_dist)
+        cond_safe = eff_dist >= self.proxemic_dist
+
+        # Apply piece-wise functional equivalents matching your exact scaling mathematical intents
+        choice_collision = 10.0 * np.abs(eff_dist + self.proxemic_dist)
+        choice_proxemic = 10.0 * np.abs(eff_dist)
+        choice_safe = eff_dist / 10.0
+
+        # Select matching equations per cell element
+        pair_costs = np.select(
+            [cond_collision, cond_proxemic, cond_safe],
+            [choice_collision, choice_proxemic, choice_safe],
+        )
+
+        # Sum penalties across all agents to get single total cost scalar per sample trajectory
+        return np.sum(pair_costs, axis=1)
     
 
 
